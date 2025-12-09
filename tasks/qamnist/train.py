@@ -148,7 +148,6 @@ if __name__=='__main__':
         device = 'mps'
     else:
         device = 'cpu'
-    print(f'Running model {args.model} on {device}')
 
     # Build model
     model = prepare_model(args, device)
@@ -213,7 +212,7 @@ if __name__=='__main__':
             test_accuracies = checkpoint['test_accuracies']
             iters = checkpoint['iters']
         else:
-            print('Only relading model!')
+            print('Only reloading model!')
         if 'torch_rng_state' in checkpoint:
             # Reset seeds, otherwise mid-way training can be obscure (particularly for imagenet)
             torch.set_rng_state(checkpoint['torch_rng_state'].cpu().byte())
