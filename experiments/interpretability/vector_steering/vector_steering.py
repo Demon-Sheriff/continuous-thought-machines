@@ -88,11 +88,11 @@ def run_vector_steering(
     console = Console(force_terminal=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Defaults
+    # Defaults - extended alpha range for better coverage
     if alpha_values is None:
-        alpha_values = [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0]
+        alpha_values = [-10.0, -5.0, -2.0, -1.0, 0.0, 1.0, 2.0, 5.0, 10.0]
     if intervention_ticks is None:
-        intervention_ticks = [5, 10, 15, 20]
+        intervention_ticks = None  # None = ALL ticks (was [5, 10, 15, 20])
     if not checkpoint_path:
         checkpoint_path = "/data/checkpoints/mazes/ctm_mazeslarge_D=2048_T=75_M=25.pt"
     if not data_root:
@@ -367,10 +367,15 @@ def run_vector_steering(
     def get_direction_counts(predictions):
         """Get counts of each direction from model predictions."""
         # predictions shape: (B, out_dims, iterations)
-        # For maze: out_dims = 50 = 10 steps × 5 directions
-        pred_dirs = predictions.argmax(dim=1)  # Shape: (B, iterations)
+        # For maze: out_dims = 500 = 100 steps × 5 directions
+        B, out_dims, iters = predictions.shape
+        n_steps = out_dims // 5  # 100 route steps
 
-        # Count per direction
+        # Reshape to (B, n_steps, 5, iters) and take argmax over direction dim
+        pred_reshaped = predictions.view(B, n_steps, 5, iters)
+        pred_dirs = pred_reshaped.argmax(dim=2)  # (B, n_steps, iters) with values 0-4
+
+        # Count per direction across all steps, samples, and ticks
         counts = {d: 0 for d in range(5)}
         for d in range(5):
             counts[d] = (pred_dirs == d).sum().item()
@@ -426,7 +431,9 @@ def run_vector_steering(
             all_counts = {d: 0 for d in range(5)}
 
             with torch.no_grad():
-                steered_model.set_steering(vec_tensor, alpha, ticks=set(intervention_ticks))
+                # None means ALL ticks, otherwise convert to set
+                tick_set = None if intervention_ticks is None else set(intervention_ticks)
+                steered_model.set_steering(vec_tensor, alpha, ticks=tick_set)
 
                 for images, _ in tqdm(dataloader, desc=f"α={alpha:.1f}", leave=False):
                     images = images.to(device)

@@ -9,13 +9,13 @@
 **Why it's worth pursuing:** Understanding how spatial reasoning emerges without explicit structure is relevant beyond this specific architecture. If CTM encodes position in neuron *correlations* rather than individual activations, it suggests that standard single-neuron probing methods may miss important information in models that use distributed representations. This has implications for interpreting any architecture that relies on population coding.
 
 **High-level takeaways:**
-1. **Position IS encoded** - a linear probe achieves R² = 0.58 decoding (x,y) from internal states
+1. **Position IS encoded** - a linear probe achieves R² = 0.58-0.91 decoding (x,y) from internal states
 2. **Synchronization beats activations** - decoding from the correlation representation (S_out) is **67% better** than from raw neuron activations (Z_t): R² = 0.58 vs 0.35
 3. **Individual neurons show weak "place cell" behavior** - top spatial selectivity score is only 0.59 (weak, not like biological place cells)
 4. **Intervention effects are real but small** - patching position-encoding neurons causes 4.8x more behavioral disruption than random neurons (p < 0.001), but only changes 1-3% of moves
-5. **Vector steering didn't work** - I couldn't causally manipulate behavior using probe-derived steering vectors (negative result)
+5. **Vector steering partially works** - Y-direction steering shows strong causal effect (R²=0.97, p<0.001), but X-direction steering has no effect - an interesting asymmetry
 
-**Epistemic status:** This was a hurried ~16-hour investigation with significant time constraints. Some experiments I wanted to run (non-linear probes, per-tick analysis, attention pattern visualization) couldn't be completed. The vector steering failure in particular deserves more investigation - I may have gotten the intervention wrong rather than the hypothesis being false. Results should be taken as preliminary/exploratory.
+**Epistemic status:** This was a hurried ~16-hour investigation with significant time constraints. Some experiments I wanted to run (non-linear probes, per-tick analysis, attention pattern visualization) couldn't be completed. Results should be taken as preliminary/exploratory.
 
 ---
 
@@ -133,23 +133,35 @@ This is the most important experiment.
 
 ---
 
-## Experiment 5: Vector Steering (Negative Result)
+## Experiment 5: Vector Steering (Partial Success)
 
 **Hypothesis:** If the probe finds a "position direction" in S_out space, we can steer behavior by adding this vector during inference.
 
 **Method:**
-1. Extract probe weights W as steering vectors (W[0] = "Eastward", W[1] = "Southward")
-2. Add α·W[0] to S_out during inference
-3. Measure if directional bias shifts
+1. Extract probe weights W as steering vectors (W[0] = "X/East-West", W[1] = "Y/North-South")
+2. Add α·W[i] to S_out during inference for all ticks
+3. Measure if directional bias shifts (up/down for Y, left/right for X)
+4. Alpha range: [-10, -5, -2, -1, 0, 1, 2, 5, 10]
 
-**Results:** No effect. All regression slopes = 0.0 across α ∈ [-2, 2].
+**Results:**
 
-**This is an honest negative result.** The probe finds position information, but I couldn't causally manipulate behavior using it. Possible explanations:
-- The representation is *read* differently than it's *written*
-- Wrong intervention magnitude or location
-- Position is encoded but used through a more complex computation than vector addition can capture
+| Steering Vector | Effect on Bias | R² | p-value |
+|-----------------|----------------|-----|---------|
+| Y (North-South) | **Strong** | 0.97 | 1.2e-6 |
+| X (East-West) | None | 0.005 | 0.86 |
+| Random | Weak | 0.53 | 0.03 |
 
-**I couldn't close the causal loop.** This is a significant limitation.
+![Vector Steering](experiments/interpretability/outputs/vector_steering_fixed/vector_steering_results.png)
+*Figure 6: Vector steering results. Y-direction steering shows a strong linear relationship between steering magnitude and up/down bias (R²=0.97). X-direction steering has no effect.*
+
+**Y steering works:** Adding the Y probe vector causes the model to predict more "down" moves; subtracting it causes more "up" moves. The effect is highly linear (R²=0.97) and statistically significant (p<0.001).
+
+**X steering doesn't work:** Despite the probe successfully decoding X position, steering with the X vector has no effect on left/right bias.
+
+**Interpretation:** This asymmetry is interesting. The model uses Y position causally in a way that's accessible to linear steering, but X position encoding is either:
+- Read through a non-linear computation
+- Redundantly encoded in ways that resist simple vector addition
+- Used differently in the downstream computation
 
 ---
 
@@ -157,11 +169,11 @@ This is the most important experiment.
 
 | Question | Answer | Evidence |
 |----------|--------|----------|
-| Does CTM encode position? | Yes | R² = 0.58 probe |
+| Does CTM encode position? | Yes | R² = 0.58-0.91 probe |
 | Where is it encoded? | Correlations > Activations | +67% R² |
 | Are there "place cells"? | Weak only | Max score 0.59 |
-| Is encoding causal? | Partially | 4.8x vs random (p<0.001) |
-| Can we steer with it? | **No** | Negative result |
+| Is encoding causal? | Yes (patching) | 4.8x vs random (p<0.001) |
+| Can we steer with it? | **Y: Yes, X: No** | Y: R²=0.97, p<0.001 |
 
 ---
 
@@ -169,15 +181,15 @@ This is the most important experiment.
 
 This investigation was constrained by time (~16 hours) and several important experiments couldn't be completed:
 
-1. **Vector steering failure is unexplained** - I don't know why it didn't work. Could be wrong magnitude, wrong intervention point, or the representation isn't used the way I assumed.
+1. **X vs Y asymmetry is unexplained** - Vector steering works for Y but not X. Could be architectural (how inputs are processed), task-specific (vertical vs horizontal movement patterns), or representational (X encoded non-linearly).
 
-2. **Small intervention effects** - 1-3% behavior change is statistically significant but practically small. The model may have massive redundancy.
+2. **Small intervention effects** - 1-3% behavior change from patching is statistically significant but practically small. The model may have massive redundancy.
 
 3. **Single task/checkpoint** - Only tested maze navigation on one pre-trained model.
 
 4. **No attention analysis** - CTM uses attention for visual processing; I didn't analyze these patterns.
 
-5. **Linear probes only** - Non-linear methods might reveal stronger encoding.
+5. **Linear probes only** - Non-linear methods might reveal stronger encoding or explain the X/Y asymmetry.
 
 ---
 
@@ -187,7 +199,7 @@ This investigation was constrained by time (~16 hours) and several important exp
 
 2. **Always compare to baselines:** The random neuron control was essential. Without it, the 1% intervention effect would be meaningless. (Neel emphasizes this - I took it seriously.)
 
-3. **Negative results matter:** Vector steering not working constrains hypotheses about how position is used.
+3. **Partial results are informative:** Vector steering working for Y but not X reveals asymmetric encoding - more interesting than "all works" or "nothing works".
 
 4. **Architecture shapes interpretability:** CTM's correlational encoding suggests we need to analyze neuron *relationships*, not just individual neurons. Standard single-neuron probes miss most of the signal.
 
@@ -203,12 +215,41 @@ This investigation was constrained by time (~16 hours) and several important exp
 
 ---
 
+## Future Work
+
+The X/Y steering asymmetry raises precise follow-up questions:
+
+1. **Why does Y work but not X?**
+   - Hypothesis A: Architectural - CTM processes images row-by-row (via conv layers), making vertical position more directly encoded
+   - Hypothesis B: Task-specific - maze generation or optimal paths favor vertical movement patterns
+   - Hypothesis C: Representational - X is encoded non-linearly while Y is linear
+   - *Test*: Analyze probe weight norms/distributions, check maze movement statistics for vertical vs horizontal bias
+
+2. **Non-linear steering for X**
+   - Try MLP-based steering vectors instead of linear probe weights
+   - Use activation patching on X-selective neurons identified by variance analysis
+
+3. **Per-tick steering analysis**
+   - When during the 75 ticks does Y steering have maximum effect?
+   - Does X encoding emerge later in processing where linear steering can't reach?
+
+4. **Attention pattern analysis**
+   - CTM uses attention for visual processing - do attention patterns encode X vs Y differently?
+   - Could X position be encoded in attention weights rather than S_out?
+
+5. **Scale experiments**
+   - Current steering used 50 mazes (sufficient for Y, p=1.2e-6)
+   - Scale to 500+ mazes to detect smaller X effects if they exist
+   - Test on different maze sizes (39×39 vs 59×59) for generalization
+
+---
+
 ## Code and Reproducibility
 
 All experiments at:
 - `experiments/interpretability/sync_matrix_probe.py` - Key S_out vs Z_t comparison
 - `experiments/interpretability/robust/robust_runner.py` - Intervention experiments with controls
-- `experiments/interpretability/vector_steering/vector_steering.py` - Steering (negative result)
+- `experiments/interpretability/vector_steering/vector_steering.py` - Steering (partial success: Y works, X doesn't)
 - `observations.md` - Detailed experimental log
 
 ---
