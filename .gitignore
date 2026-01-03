@@ -23,3 +23,7 @@ examples/*
 !examples/goldfish.jpg
 checkpoints
 utils/hugging_face/
+.venv
+__pycache__
+CLAUDE.md
+.python-version

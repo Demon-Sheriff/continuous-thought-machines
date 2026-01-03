@@ -331,8 +331,12 @@ def run_robust_probe(
     })
 
     from experiments.interpretability.probe_experiment import (
-        ProbeConfig, load_model, collect_internal_states, analyze_place_cells
+        ProbeConfig, load_model, collect_internal_states, analyze_place_cells,
+        create_place_field_plots
     )
+
+    # Maze size in pixels for place field visualization
+    MAZE_SIZE_PIXELS = {"medium": 39, "large": 59, "small": 19}
     from data.custom_datasets import MazeImageFolder
 
     wandb_run = None
@@ -366,6 +370,7 @@ def run_robust_probe(
 
     # Aggregate results across seeds
     all_neuron_scores = {}  # neuron_id -> list of scores across seeds
+    last_analysis = None  # Store last analysis for place field visualization
 
     print_step_header(console, 2, "Running probe analysis across seeds")
 
@@ -409,6 +414,7 @@ def run_robust_probe(
             # Run probe - collect internal states and analyze place cells
             states, mazes, solutions, sample_positions = collect_internal_states(model, dataloader, config)
             analysis = analyze_place_cells(states, sample_positions, config)
+            last_analysis = analysis  # Keep for place field visualization
 
             # Extract scores from analysis
             neuron_metrics = analysis['neuron_metrics']
@@ -556,14 +562,34 @@ def run_robust_probe(
 
     console.print(f"  [green]✓[/] Saved plot to {save_path}")
 
+    # Create place field visualizations
+    print_step_header(console, 5, "Creating place field heatmaps")
+    place_field_path = None
+    if last_analysis is not None:
+        # Update config output_dir for place field function
+        config.output_dir = output_dir
+        maze_pixels = MAZE_SIZE_PIXELS.get(maze_size, 39)
+        try:
+            place_field_path = create_place_field_plots(
+                last_analysis,
+                config,
+                maze_size=maze_pixels
+            )
+            console.print(f"  [green]✓[/] Saved place field heatmaps to {place_field_path}")
+        except Exception as e:
+            console.print(f"  [yellow]⚠[/] Could not create place fields: {e}")
+
     if use_wandb:
-        wandb.log({
+        log_data = {
             "top_neuron_1_id": int(neuron_ids[ranked_indices[0]]),
             "top_neuron_1_score": float(mean_scores[ranked_indices[0]]),
             "top_10_mean_score": float(np.mean([mean_scores[i] for i in ranked_indices[:10]])),
             "score_95th_percentile": float(np.percentile(mean_scores, 95)),
             "robust_probe_plot": wandb.Image(save_path),
-        })
+        }
+        if place_field_path:
+            log_data["place_fields"] = wandb.Image(place_field_path)
+        wandb.log(log_data)
         wandb.finish()
 
     output_volume.commit()
